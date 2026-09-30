@@ -37,3 +37,4 @@ jobs:
           WEBHOOK_AI: ${{ secrets.WEBHOOK_AI }}
           WEBHOOK_ECONOMY: ${{ secrets.WEBHOOK_ECONOMY }}
         run: python news_automation_test.py
+
