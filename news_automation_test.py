@@ -5,7 +5,6 @@
 - 22시: 분야별 뉴스 헤드라인만 전달
 """
 import os
-import json
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
@@ -56,8 +55,9 @@ PROMPT = """너는 구독자 10만 경제·재테크 인스타그램 카드뉴�
 
 [후킹 문구 스타일 — 가장 중요]
 - 의심, 반전, 도발형 어그로. 15자 이내.
-- 예시 느낌: "반감기? 글쎄..", "삼성전자, 아직도 믿어?", "금리 내렸는데 이자는 그대로?", "이거 모르면 또 물립니다"
-- 단, 뉴스에 없는 사실을 지어내거나 "무조건 오른다" 같은 수익 보장 표현은 금지. 어그로는 말투로만.
+- 예시 느낌: 반감기? 글쎄.. / 삼성전자, 아직도 믿어? / 금리 내렸는데 이자는 그대로? / 이거 모르면 또 물립니다
+- 문구 안에 큰따옴표(")는 쓰지 말 것.
+- 단, 뉴스에 없는 사실을 지어내거나 무조건 오른다 같은 수익 보장 표현은 금지. 어그로는 말투로만.
 - 3개는 서로 다른 각도로 (의심형 / 반전형 / 경고형).
 
 [원고 규칙]
@@ -67,22 +67,59 @@ PROMPT = """너는 구독자 10만 경제·재테크 인스타그램 카드뉴�
 - 7장은 한 줄 요약 + 저장/팔로우 유도.
 - caption: 2문장 이내. hashtags: 5개.
 
-반드시 아래 JSON만 출력해. 다른 말, 코드블록 표시 없이.
-{{"news_index": 0, "topic_title": "원고 주제 한 줄", "hooks": ["A", "B", "C"],
-"slides": [{{"title": "", "body": ""}}], "caption": "", "hashtags": ["#..."]}}"""
+반드시 save_cardnews 도구로 결과를 저장해."""
 
 
-def write_script(topic_name, news):
+CARDNEWS_TOOL = {
+    "name": "save_cardnews",
+    "description": "완성된 카드뉴스 원고를 저장한다.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "news_index": {"type": "integer", "description": "고른 뉴스 번호"},
+            "topic_title": {"type": "string", "description": "원고 주제 한 줄"},
+            "hooks": {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 3,
+                      "description": "후킹 문구 3개 (의심형, 반전형, 경고형)"},
+            "slides": {
+                "type": "array", "minItems": 7, "maxItems": 7,
+                "items": {
+                    "type": "object",
+                    "properties": {"title": {"type": "string"}, "body": {"type": "string"}},
+                    "required": ["title", "body"],
+                },
+            },
+            "caption": {"type": "string"},
+            "hashtags": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["news_index", "topic_title", "hooks", "slides", "caption", "hashtags"],
+    },
+}
+
+
+def write_script(topic_name, news, retries=2):
     import anthropic
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     news_text = "\n".join(f"{i}. {n['title']} ({n['source']})" for i, n in enumerate(news))
-    msg = client.messages.create(
-        model=MODEL,
-        max_tokens=1500,
-        messages=[{"role": "user", "content": PROMPT.format(topic=topic_name, news=news_text)}],
-    )
-    text = "".join(b.text for b in msg.content if b.type == "text")
-    return json.loads(text[text.find("{"): text.rfind("}") + 1])
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            msg = client.messages.create(
+                model=MODEL,
+                max_tokens=2500,
+                tools=[CARDNEWS_TOOL],
+                tool_choice={"type": "tool", "name": "save_cardnews"},
+                messages=[{"role": "user", "content": PROMPT.format(topic=topic_name, news=news_text)}],
+            )
+            for block in msg.content:
+                if block.type == "tool_use":
+                    data = block.input
+                    if len(data.get("slides", [])) >= 7 and len(data.get("hooks", [])) >= 3:
+                        return data
+            last_err = f"형식 불완전 (stop_reason={msg.stop_reason})"
+        except Exception as e:
+            last_err = e
+        print(f"  재시도 {attempt + 1}: {last_err}")
+    raise RuntimeError(last_err)
 
 
 def format_script(data, news):
