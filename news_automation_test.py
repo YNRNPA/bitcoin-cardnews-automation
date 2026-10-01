@@ -68,18 +68,18 @@ def send_to_discord(webhook_url, message, channel_name=""):
             webhook_url,
             json=payload,
             timeout=10
-)
+        )
 
-# 응답 로깅 시작 ↓↓↓
-print(f"[INFO] Webhook response status: {response.status_code}")
+        # 응답 로깅 시작 ↓↓↓
+        print(f"[INFO] Webhook response status: {response.status_code}")
 
-if response.status_code in [200, 204]:
-    print(f"[SUCCESS] {channel_name} 채널에 메시지 전송 성공")
-    return True
-else:
-    print(f"[ERROR] Webhook failed - Status: {response.status_code}")
-    print(f"[ERROR] Response body: {response.text}")
-    return False
+        if response.status_code in [200, 204]:
+            print(f"[SUCCESS] {channel_name} 채널에 메시지 전송 성공")
+            return True
+        else:
+            print(f"[ERROR] Webhook failed - Status: {response.status_code}")
+            print(f"[ERROR] Response body: {response.text}")
+            return False
             
     except requests.exceptions.Timeout:
         print(f"[ERROR] Webhook timeout (10초 초과)")
