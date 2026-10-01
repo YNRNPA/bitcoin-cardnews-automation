@@ -68,18 +68,18 @@ def send_to_discord(webhook_url, message, channel_name=""):
             webhook_url,
             json=payload,
             timeout=10
-        )
-        
-        # ✅ 응답 로깅 (핵심 수정 부분)
-        print(f"[INFO] Webhook response status: {response.status_code}")
-        
-        if response.status_code in [200, 204]:
-            print(f"[SUCCESS] {channel_name} 채널에 메시지 전송 성공")
-            return True
-        else:
-            print(f"[ERROR] Webhook failed - Status: {response.status_code}")
-            print(f"[ERROR] Response body: {response.text}")
-            return False
+)
+
+# 응답 로깅 시작 ↓↓↓
+print(f"[INFO] Webhook response status: {response.status_code}")
+
+if response.status_code in [200, 204]:
+    print(f"[SUCCESS] {channel_name} 채널에 메시지 전송 성공")
+    return True
+else:
+    print(f"[ERROR] Webhook failed - Status: {response.status_code}")
+    print(f"[ERROR] Response body: {response.text}")
+    return False
             
     except requests.exceptions.Timeout:
         print(f"[ERROR] Webhook timeout (10초 초과)")
@@ -154,3 +154,6 @@ if __name__ == "__main__":
     
     # 테스트 2: 뉴스 모드 (선택사항)
     # run_automation(mode="news", topic="금융")
+
+
+
