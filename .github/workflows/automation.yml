@@ -9,9 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'script 또는 news'
+        description: 'news = 뉴스 요약 발송'
         required: false
-        default: 'script'
+        default: 'news'
+        type: choice
+        options:
+          - news
 
 jobs:
   automation:
@@ -36,6 +39,7 @@ jobs:
 
       - name: Run automation
         env:
+          MODE: ${{ github.event.inputs.mode || 'news' }}
           WEBHOOK_BITCOIN: ${{ secrets.WEBHOOK_BITCOIN }}
           WEBHOOK_STOCK: ${{ secrets.WEBHOOK_STOCK }}
           WEBHOOK_AI: ${{ secrets.WEBHOOK_AI }}
