@@ -6,12 +6,13 @@ from anthropic import Anthropic
 # 초기화
 client = Anthropic()
 
-# Discord 웹훅 URL (GitHub Secrets에서 가져옴)
+import os  
+
 WEBHOOKS = {
-    "bitcoin": "https://discordapp.com/api/webhooks/1554779417820266506/42KkDGX1fT-Xix8VXATl7-JgX2drI9XdvedwjZA_G3ZY3EtDMs-qfUN08om87-HbGOVM",
-    "stock": "https://discordapp.com/api/webhooks/1554779586590547998/du7RqZt5byxmO6A0TbUqR8j0Dbd3hekxV4_u1T6mAJ6O8Og--SBjyv0Jrr6RSjsEAffG",
-    "ai": "https://discordapp.com/api/webhooks/1554780010555117598/HKBDxIJUBcS0yQVaUvlJs9pnRqlIEYFg2JVJdZQMQeVbzvOIhKCeIZOOcSP8wFXCw5TQ",
-    "economy": "https://discordapp.com/api/webhooks/1554779774877175859/QtU0Vzdp9GX1zOlJPDo1ocOtFOeV3C4gCTi3hnx2OK3RXfRN0C7-3xUNI0GjUmCvTBYA"
+    "bitcoin": os.environ.get("WEBHOOK_BITCOIN", ""),
+    "stock": os.environ.get("WEBHOOK_STOCK", ""),
+    "ai": os.environ.get("WEBHOOK_AI", ""),
+    "economy": os.environ.get("WEBHOOK_ECONOMY", "")
 }
 
 # 프롬프트 로드
