@@ -5,37 +5,41 @@ on:
     - cron: '0 1 * * *'  # 오전 10시 KST
     - cron: '0 7 * * *'  # 오후 4시 KST
     - cron: '0 13 * * *' # 오후 10시 KST
-  
+
   workflow_dispatch:
     inputs:
       mode:
-        description: 'script 또는 news'
+        description: 'news = 뉴스 요약 발송'
         required: false
-        default: 'script'
+        default: 'news'
+        type: choice
+        options:
+          - news
 
 jobs:
   automation:
     # ✅ 수정 1: ubuntu-24.04 명시적 지정
     runs-on: ubuntu-24.04
-    
+
     steps:
       - name: Checkout code
         # ✅ 수정 2: v4 → v5
         uses: actions/checkout@v5
-      
+
       - name: Set up Python
         # ✅ 수정 3: v4 → v5
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      
+
       - name: Run automation
         env:
+          MODE: ${{ github.event.inputs.mode || 'news' }}
           WEBHOOK_BITCOIN: ${{ secrets.WEBHOOK_BITCOIN }}
           WEBHOOK_STOCK: ${{ secrets.WEBHOOK_STOCK }}
           WEBHOOK_AI: ${{ secrets.WEBHOOK_AI }}

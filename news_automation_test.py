@@ -1,18 +1,19 @@
 import requests
 import json
 import os
+import sys
 from datetime import datetime, timedelta
 from anthropic import Anthropic
 
 # 초기화
 client = Anthropic()
 
-# Discord 웹훅
+# Discord webhook URLs are stored in GitHub Actions Secrets.
 WEBHOOKS = {
-    "bitcoin": os.environ.get("WEBHOOK_BITCOIN", ""),
-    "stock": os.environ.get("WEBHOOK_STOCK", ""),
-    "ai": os.environ.get("WEBHOOK_AI", ""),
-    "economy": os.environ.get("WEBHOOK_ECONOMY", "")
+    "bitcoin": os.getenv("WEBHOOK_BITCOIN", "").strip(),
+    "stock": os.getenv("WEBHOOK_STOCK", "").strip(),
+    "ai": os.getenv("WEBHOOK_AI", "").strip(),
+    "economy": os.getenv("WEBHOOK_ECONOMY", "").strip(),
 }
 
 # 📌 뉴스 히스토리 파일 (중복 방지)
@@ -43,7 +44,7 @@ def fetch_news(keyword, days=7):
         # ✅ 날짜 범위 확장 (과거 7일)
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
-        
+
         # Google News API 또는 다른 뉴스 API
         # 예: NewsAPI 사용
         url = "https://newsapi.org/v2/everything"
@@ -55,12 +56,19 @@ def fetch_news(keyword, days=7):
             "language": "ko",
             "pageSize": 10
         }
-        
-        NEWS_API_KEY = os.environ.get("NEWS_API_KEY")
-        headers = {"Authorization": NEWS_API_KEY}
-        
-        response = requests.get(url, params=params, timeout=10)
-        
+
+        news_api_key = os.getenv("NEWS_API_KEY", "").strip()
+        if not news_api_key or news_api_key.startswith("REPLACE_WITH_NEW_"):
+            print("[ERROR] NEWS_API_KEY가 설정되지 않았습니다")
+            return None
+
+        response = requests.get(
+            url,
+            params=params,
+            headers={"X-Api-Key": news_api_key},
+            timeout=10
+        )
+
         if response.status_code == 200:
             articles = response.json().get("articles", [])
             return [
@@ -71,10 +79,11 @@ def fetch_news(keyword, days=7):
                 }
                 for article in articles
             ]
-        return []
+        print(f"[ERROR] NewsAPI 요청 실패: {response.status_code} {response.text}")
+        return None
     except Exception as e:
         print(f"[ERROR] 뉴스 수집 실패: {str(e)}")
-        return []
+        return None
 
 # ✅ 수정: 중복 제거 후 뉴스만 선택
 def get_unique_news(keyword, days=7):
@@ -83,13 +92,15 @@ def get_unique_news(keyword, days=7):
     """
     all_news = fetch_news(keyword, days=days)
     history = load_news_history()
-    
+    if all_news is None:
+        return None, history
+
     # 새로운 뉴스만 필터링
     new_news = [
-        news for news in all_news 
+        news for news in all_news
         if not is_news_already_sent(news["title"], history)
     ]
-    
+
     return new_news, history
 
 # Claude로 뉴스 요약 생성
@@ -99,20 +110,20 @@ def generate_news_summary(news_list, topic):
     """
     if not news_list:
         return "오늘 새로운 뉴스가 없습니다."
-    
+
     news_text = "\n".join([
         f"- [{news['source']}] {news['title']}"
         for news in news_list[:5]  # 상위 5개만
     ])
-    
+
     prompt = f"""다음 {topic} 뉴스들을 정리해서 2줄 요약해줘:
 
 {news_text}
 
-형식: 
+형식:
 제목: [요약]
 출처: [뉴스 출처]"""
-    
+
     try:
         response = client.messages.create(
             model="claude-opus-4-1-20250805",
@@ -121,20 +132,29 @@ def generate_news_summary(news_list, topic):
         )
         return response.content[0].text
     except Exception as e:
-        return f"요약 실패: {str(e)}"
+        print(f"[ERROR] Claude 요약 생성 실패: {str(e)}")
+        return None
 
 # Discord 발송
 def send_to_discord(webhook_url, message, channel_name=""):
     try:
         payload = {"content": message}
         response = requests.post(webhook_url, json=payload, timeout=10)
-        
+        print(f"[INFO] Webhook response status: {response.status_code}")
+
         if response.status_code in [200, 204]:
             print(f"[SUCCESS] {channel_name} 채널 발송 완료")
             return True
         else:
             print(f"[ERROR] {response.status_code}: {response.text}")
             return False
+
+    except requests.exceptions.Timeout:
+        print(f"[ERROR] Webhook timeout (10초 초과)")
+        return False
+    except requests.exceptions.ConnectionError:
+        print(f"[ERROR] 네트워크 연결 실패")
+        return False
     except Exception as e:
         print(f"[ERROR] {str(e)}")
         return False
@@ -142,41 +162,52 @@ def send_to_discord(webhook_url, message, channel_name=""):
 # 메인 자동화
 def run_automation(mode="news", topic="비트코인"):
     print(f"\n{'='*50}")
+    print(f"[MODE] {mode.upper()}")
     print(f"[START] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} KST")
     print(f"{'='*50}\n")
-    
-    # 1️⃣ 뉴스 수집 (과거 7일)
-    print(f"[STEP 1] '{topic}' 뉴스 수집 중 (과거 7일)...")
-    new_news, history = get_unique_news(topic, days=7)
-    
-    if not new_news:
-        print(f"[INFO] 새로운 뉴스 없음 (총 {len(history)}개 이미 보냄)")
-        return
-    
-    print(f"[INFO] 새로운 뉴스 {len(new_news)}개 발견")
-    
-    # 2️⃣ 요약 생성
-    print(f"\n[STEP 2] 뉴스 요약 생성 중...")
-    summary = generate_news_summary(new_news, topic)
-    
-    # 3️⃣ Discord 발송
-    print(f"\n[STEP 3] Discord 발송 중...")
+
+    if mode != "news":
+        print(f"[ERROR] 잘못된 모드입니다: {mode}")
+        return False
+
     channel_map = {"비트코인": "bitcoin", "주식": "stock", "AI": "ai"}
     channel = channel_map.get(topic, "economy")
-    webhook = WEBHOOKS.get(channel)
-    
-    if webhook and send_to_discord(webhook, summary, channel):
-        # ✅ 히스토리 업데이트 (발송한 뉴스만 추가)
-        for news in new_news:
-            history.append({
-                "title": news["title"],
-                "sent_at": datetime.now().isoformat(),
-                "source": news["source"]
-            })
-        save_news_history(history)
-        print(f"[INFO] 히스토리 업데이트 (총 {len(history)}개)")
-    
+    webhook_url = WEBHOOKS.get(channel, "")
+    if not webhook_url or webhook_url.startswith("REPLACE_WITH_NEW_"):
+        print(f"[ERROR] {channel} 채널의 WEBHOOK secret이 설정되지 않았습니다")
+        return False
+
+    print(f"[STEP 1] '{topic}' 뉴스 수집 중 (과거 7일)...")
+    new_news, history = get_unique_news(topic, days=7)
+    if new_news is None:
+        return False
+
+    if not new_news:
+        print(f"[INFO] 새로운 뉴스 없음 (총 {len(history)}개 이미 보냄)")
+        return True
+
+    print(f"[INFO] 새로운 뉴스 {len(new_news)}개 발견")
+
+    print(f"\n[STEP 2] 뉴스 요약 생성 중...")
+    summary = generate_news_summary(new_news, topic)
+    if not summary:
+        return False
+
+    print(f"\n[STEP 3] Discord 발송 중...")
+    if not send_to_discord(webhook_url, summary, channel):
+        return False
+
+    for news in new_news:
+        history.append({
+            "title": news["title"],
+            "sent_at": datetime.now().isoformat(),
+            "source": news["source"]
+        })
+    save_news_history(history)
+    print(f"[INFO] 히스토리 업데이트 (총 {len(history)}개)")
     print(f"\n{'='*50}\n")
+    return True
 
 if __name__ == "__main__":
-    run_automation(mode="news", topic="비트코인")
+    mode = os.getenv("MODE") or "news"
+    sys.exit(0 if run_automation(mode=mode) else 1)
